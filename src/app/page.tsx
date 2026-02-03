@@ -3,11 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMeetingStore } from '@/store/useMeetingStore';
-import { PlusCircle, ArrowRight, Hash, Sparkles, Lock, Globe, ShieldCheck, Trash2 } from 'lucide-react';
+import { PlusCircle, ArrowRight, Hash, Sparkles, Lock, Globe, ShieldCheck, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Swal from 'sweetalert2';
 
-// Interface untuk struktur data Room di LocalStorage
 interface ActiveRoom {
   id: string;
   admins: string[];
@@ -23,217 +22,203 @@ export default function Home() {
   const [isJoinMode, setIsJoinMode] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
   const [activeRooms, setActiveRooms] = useState<ActiveRoom[]>([]);
+  const [isExiting, setIsExiting] = useState(false);
+  const [entryStage, setEntryStage] = useState<'idle' | 'checking' | 'initializing'>('idle');
 
-  // 1. Sinkronisasi & Pembersihan Duplikat
   useEffect(() => {
     const syncRooms = () => {
       const saved = localStorage.getItem('azura_active_meetings');
       if (saved) {
         const rooms: ActiveRoom[] = JSON.parse(saved);
-
-        // FILTER & UNIQUE: Memastikan tidak ada ID ganda dan hanya room dengan admin yang tampil
         const uniqueRooms = rooms.reduce((acc: ActiveRoom[], current) => {
           const x = acc.find(item => item.id === current.id);
-          if (!x && current.admins.length > 0) {
-            return acc.concat([current]);
-          } else {
-            return acc;
-          }
+          if (!x && current.admins.length > 0) return acc.concat([current]);
+          return acc;
         }, []);
-
-        // Update storage jika kita menemukan dan membersihkan duplikat
-        if (uniqueRooms.length !== rooms.length) {
-          localStorage.setItem('azura_active_meetings', JSON.stringify(uniqueRooms));
-        }
-
         setActiveRooms(uniqueRooms);
       }
     };
-
     syncRooms();
     window.addEventListener('storage', syncRooms);
     return () => window.removeEventListener('storage', syncRooms);
   }, []);
 
-  // 2. Logic Validasi & Masuk ke Room
   const processEntry = (roomId: string, roomAdmins: string[], roomIsPrivate: boolean, isNew: boolean) => {
-    // Normalisasi ID: Huruf kecil, ganti spasi dengan dash
     const finalRoomId = roomId.trim().replace(/\s+/g, '-').toLowerCase();
-
     if (!nameInput.trim()) {
       Swal.fire({
-        title: 'Who are you?',
-        text: 'Please enter your name to continue.',
+        title: 'WHO ARE YOU?',
+        text: 'Please enter your name.',
         icon: 'question',
         confirmButtonColor: '#6366f1',
-        customClass: { popup: 'rounded-[2rem]' }
+        customClass: { popup: 'rounded-[1.5rem] border-[4px] border-slate-900 shadow-[6px_6px_0_0_rgba(0,0,0,1)]' }
       });
       return;
     }
-
     if (!finalRoomId) return;
 
-    if (roomIsPrivate && !isNew) {
-      Swal.fire({
-        title: 'Requesting Access',
-        text: 'Waiting for Azura.AI security check...',
-        icon: 'info',
-        timer: 1500,
-        showConfirmButton: false,
-        didOpen: () => Swal.showLoading(),
-      }).then(() => proceed(finalRoomId, roomAdmins, isNew));
-    } else {
-      proceed(finalRoomId, roomAdmins, isNew);
-    }
+    setEntryStage('checking');
+    setTimeout(() => {
+      setEntryStage('initializing');
+      setTimeout(() => {
+        setIsExiting(true);
+        setTimeout(() => proceed(finalRoomId, roomAdmins, isNew), 600);
+      }, 1000);
+    }, 800);
   };
 
   const proceed = (roomId: string, currentAdmins: string[], isNew: boolean) => {
     clearStore();
-
     const saved = localStorage.getItem('azura_active_meetings');
     let allRooms: ActiveRoom[] = saved ? JSON.parse(saved) : [];
-
     if (isNew) {
-      // Pastikan tidak menimpa room yang sudah ada dengan ID yang sama
       const existingIdx = allRooms.findIndex(r => r.id === roomId);
       if (existingIdx !== -1) {
         allRooms[existingIdx].admins = Array.from(new Set([...allRooms[existingIdx].admins, nameInput]));
       } else {
         allRooms.push({ id: roomId, admins: [nameInput], isPrivate });
       }
-    } else {
-      const idx = allRooms.findIndex(r => r.id === roomId);
-      if (idx !== -1) {
-        if (!allRooms[idx].admins.includes(nameInput)) {
-          allRooms[idx].admins.push(nameInput);
-        }
-      }
     }
-
     localStorage.setItem('azura_active_meetings', JSON.stringify(allRooms));
-
     setUserName(nameInput);
     setRoomName(roomId);
     addAdmin(nameInput);
-
     router.push(`/room/${roomId}`);
   };
 
   return (
-    <main className="relative min-h-screen w-full flex items-center justify-center bg-[#FDFCF0] p-4 md:p-12 overflow-hidden">
+    <main className={cn(
+      "relative h-screen w-full flex items-center justify-center bg-[#FDFCF0] p-4 md:p-8 overflow-hidden transition-all duration-700",
+      isExiting ? "opacity-0 scale-95 blur-md" : "opacity-100 scale-100 blur-0"
+    )}>
 
-      {/* Soft Background Blur */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-indigo-100/50 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-pink-100/50 rounded-full blur-[120px]" />
+      {/* OVERLAY LOADING */}
+      {entryStage !== 'idle' && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="max-w-xs w-full text-center space-y-6">
+            <Loader2 className="w-12 h-12 text-white animate-spin mx-auto" strokeWidth={3} />
+            <div className="space-y-1">
+              <h2 className="text-white font-black text-xl uppercase italic tracking-tighter">
+                {entryStage === 'checking' ? 'Security Check' : 'Initializing'}
+              </h2>
+              <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden border border-slate-700">
+                <div className={cn(
+                  "h-full bg-indigo-500 transition-all duration-[1000ms] ease-out",
+                  entryStage === 'initializing' ? "w-full" : "w-1/3"
+                )} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Background Blurs */}
+      <div className="absolute inset-0 z-0 opacity-40">
+        <div className="absolute top-[-5%] left-[-5%] w-[400px] h-[400px] bg-indigo-100 rounded-full blur-[100px]" />
+        <div className="absolute bottom-[-5%] right-[-5%] w-[400px] h-[400px] bg-pink-100 rounded-full blur-[100px]" />
       </div>
 
-      <div className="relative z-10 w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
+      <div className="relative z-10 w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
 
-        {/* Branding Section */}
-        <div className="lg:col-span-7 space-y-8 text-center lg:text-left">
-          <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-white shadow-sm border border-slate-100 text-indigo-600 font-bold text-[10px] uppercase tracking-[0.2em]">
-            <Sparkles size={14} /> Powered by Azura Intelligence
+        {/* Branding Section - Ukuran Font Diperkecil */}
+        <div className="lg:col-span-6 space-y-4 text-center lg:text-left">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-slate-200 text-indigo-600 font-bold text-[8px] uppercase tracking-[0.2em]">
+            <Sparkles size={10} /> Powered by Azura AI
           </div>
-          <h1 className="text-6xl md:text-8xl font-black text-slate-900 tracking-tighter leading-[0.9]">
+          <h1 className="text-5xl md:text-6xl font-black text-slate-900 tracking-tighter leading-[0.85]">
             Meet with <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Confidence.</span>
           </h1>
-          <p className="text-slate-500 text-lg md:text-xl max-w-md mx-auto lg:mx-0 font-medium">
-            The next generation of video conferencing. Private, fast, and secure.
+          <p className="text-slate-500 text-sm md:text-base max-w-sm mx-auto lg:mx-0 font-medium italic opacity-80">
+            "Next-gen conferencing. Private, fast, secure."
           </p>
         </div>
 
-        {/* Card Form Section */}
-        <div className="lg:col-span-5 w-full">
-          <div className="bg-white rounded-[3rem] p-10 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] border border-white space-y-8">
+        {/* Card Form Section - Padding & Gap Dipangkas */}
+        <div className="lg:col-span-6 w-full max-w-md mx-auto">
+          <div className="bg-white rounded-[2.5rem] p-7 shadow-[10px_10px_0_0_rgba(15,23,42,1)] border-[3px] border-slate-900 space-y-6 relative">
 
-            {/* Display Name Input */}
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Your Identity</label>
+            {/* Dekorasi Pojok */}
+            <div className="absolute -top-1 -right-1 w-10 h-10 bg-indigo-50 rounded-bl-3xl border-b-[3px] border-l-[3px] border-slate-900" />
+
+            {/* Input Name */}
+            <div className="space-y-1">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-3">Your Identity</label>
               <input
                 type="text"
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
-                placeholder="What's your name?"
-                className="w-full px-8 py-5 rounded-[2rem] bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
+                placeholder="Type your name..."
+                className="w-full px-5 py-2.5 rounded-2xl bg-slate-50 border-[2px] border-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all font-black text-sm text-slate-900 placeholder:text-slate-400 placeholder:font-medium"
               />
             </div>
 
-            {/* Mode Switcher */}
-            <div className="flex bg-slate-100 p-2 rounded-[2rem]">
+            <div className="flex bg-slate-100 p-1 rounded-2xl border-[2px] border-slate-900">
               <button
                 onClick={() => setIsJoinMode(false)}
-                className={cn("flex-1 py-4 rounded-[1.5rem] text-xs font-black uppercase transition-all", !isJoinMode ? "bg-white shadow-sm text-indigo-600" : "text-slate-400")}
+                className={cn("flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all", !isJoinMode ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-600")}
               >
                 Create
               </button>
               <button
                 onClick={() => setIsJoinMode(true)}
-                className={cn("flex-1 py-4 rounded-[1.5rem] text-xs font-black uppercase transition-all", isJoinMode ? "bg-white shadow-sm text-indigo-600" : "text-slate-400")}
+                className={cn("flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all", isJoinMode ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-slate-600")}
               >
                 Join
               </button>
             </div>
 
-            <div className="min-h-[280px]">
+            <div className="min-h-[180px] flex flex-col justify-center">
               {!isJoinMode ? (
-                <form onSubmit={(e) => { e.preventDefault(); processEntry(roomInput, [], isPrivate, true); }} className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Room Name</label>
+                <form onSubmit={(e) => { e.preventDefault(); processEntry(roomInput, [], isPrivate, true); }} className="space-y-4 animate-in fade-in zoom-in-95 duration-300">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-3">Room Name</label>
                     <input
                       type="text"
                       onChange={(e) => setRoomInput(e.target.value)}
-                      placeholder="e.g. Weekly-Standup"
-                      className="w-full px-8 py-5 rounded-[2rem] bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
+                      placeholder="e.g. Marketing-Sync"
+                      className="w-full px-5 py-2.5 rounded-2xl bg-slate-50 border-[2px] border-slate-900 focus:border-indigo-500 focus:bg-white outline-none transition-all font-black text-sm text-slate-900 placeholder:text-slate-400 placeholder:font-medium"
                       required
                     />
                   </div>
 
-                  <div className="flex gap-3">
-                    <button type="button" onClick={() => setIsPrivate(false)} className={cn("flex-1 flex items-center justify-center gap-2 p-4 rounded-2xl border-2 font-black text-[10px] uppercase transition-all", !isPrivate ? "border-indigo-600 bg-indigo-50 text-indigo-600" : "border-slate-100 text-slate-300")}>
-                      <Globe size={16} /> Public
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsPrivate(false)} className={cn("flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl border-[2px] font-black text-[9px] uppercase transition-all", !isPrivate ? "border-slate-900 bg-indigo-50 text-indigo-600" : "border-slate-100 text-slate-300")}>
+                      <Globe size={14} /> Public
                     </button>
-                    <button type="button" onClick={() => setIsPrivate(true)} className={cn("flex-1 flex items-center justify-center gap-2 p-4 rounded-2xl border-2 font-black text-[10px] uppercase transition-all", isPrivate ? "border-pink-500 bg-pink-50 text-pink-600" : "border-slate-100 text-slate-300")}>
-                      <Lock size={16} /> Private
+                    <button type="button" onClick={() => setIsPrivate(true)} className={cn("flex-1 flex items-center justify-center gap-2 p-2.5 rounded-xl border-[2px] font-black text-[9px] uppercase transition-all", isPrivate ? "border-slate-900 bg-pink-50 text-pink-600" : "border-slate-100 text-slate-300")}>
+                      <Lock size={14} /> Private
                     </button>
                   </div>
 
-                  <button type="submit" className="w-full py-6 bg-slate-900 hover:bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-widest shadow-2xl transition-all flex items-center justify-center gap-3 group">
-                    Start Meeting <ArrowRight size={20} className="group-hover:translate-x-2 transition-transform" />
+                  <button type="submit" className="w-full py-4 bg-slate-900 hover:bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-[4px_4px_0_0_rgba(79,70,229,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all flex items-center justify-center gap-2 group mt-2">
+                    Start Meeting <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
                   </button>
                 </form>
               ) : (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar animate-in fade-in">
+                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar animate-in fade-in duration-300">
                   {activeRooms.length > 0 ? activeRooms.map((room, idx) => (
                     <button
-                      // UNIK: Menggunakan kombinasi ID dan Index untuk key
                       key={`${room.id}-${idx}`}
                       onClick={() => processEntry(room.id, room.admins, room.isPrivate, false)}
-                      className="w-full flex items-center justify-between p-5 rounded-[2rem] border-2 border-slate-50 bg-white hover:border-indigo-500 hover:shadow-xl transition-all group"
+                      className="w-full flex items-center justify-between p-3 rounded-xl border-[2px] border-slate-100 bg-white hover:border-slate-900 hover:shadow-[3px_3px_0_0_rgba(0,0,0,1)] transition-all group"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center transition-colors", room.isPrivate ? "bg-pink-50 text-pink-500 group-hover:bg-pink-500 group-hover:text-white" : "bg-indigo-50 text-indigo-500 group-hover:bg-indigo-500 group-hover:text-white")}>
-                          {room.isPrivate ? <Lock size={20} /> : <Hash size={20} />}
+                      <div className="flex items-center gap-3">
+                        <div className={cn("w-9 h-9 rounded-lg border-2 border-slate-900 flex items-center justify-center transition-colors", room.isPrivate ? "bg-pink-50 text-pink-500" : "bg-indigo-50 text-indigo-500")}>
+                          {room.isPrivate ? <Lock size={16} /> : <Hash size={16} />}
                         </div>
                         <div className="text-left">
-                          <p className="font-black text-slate-800 uppercase text-sm leading-tight">{room.id}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <ShieldCheck size={12} className="text-indigo-400" />
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
-                              {room.admins.length} Hosts Active
-                            </p>
-                          </div>
+                          <p className="font-black text-slate-800 uppercase text-[11px] leading-tight">{room.id}</p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">
+                            {room.admins.length} Hosts Online
+                          </p>
                         </div>
                       </div>
-                      <PlusCircle size={24} className="text-slate-200 group-hover:text-indigo-500 transition-colors" />
+                      <PlusCircle size={18} className="text-slate-200 group-hover:text-indigo-500 transition-colors" />
                     </button>
                   )) : (
-                    <div className="flex flex-col items-center justify-center py-16 px-6 text-center bg-slate-50/50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
-                      <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-slate-400">
-                        <Globe size={20} />
-                      </div>
-                      <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">No Live Meetings</p>
+                    <div className="py-10 text-center bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-200">
+                      <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">No Active Rooms</p>
                     </div>
                   )}
                 </div>

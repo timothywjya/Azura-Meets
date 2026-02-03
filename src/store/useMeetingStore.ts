@@ -56,9 +56,8 @@ export const useMeetingStore = create<MeetingState>((set) => ({
         admins: state.admins.filter(admin => admin !== name)
     })),
 
-    addMessage: (msg) => set((state) => ({
-        messages: [...state.messages, msg]
-    })),
+    addMessage: (msg: { sender: string; text: string; time: string; isAI?: boolean }) =>
+        set((state) => ({ messages: [...state.messages, msg] })),
 
     clearStore: () => set({
         userName: '',
