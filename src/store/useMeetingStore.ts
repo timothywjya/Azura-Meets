@@ -15,6 +15,7 @@ interface MeetingState {
     isRaisedHand: boolean;
     admins: string[];
     messages: ChatMessage[];
+    handRaisedBy: string | null;
     setUserName: (name: string) => void;
     setRoomName: (room: string) => void;
     toggleMute: () => void;
@@ -24,6 +25,7 @@ interface MeetingState {
     removeAdmin: (name: string) => void;
     addMessage: (msg: ChatMessage) => void;
     clearStore: () => void;
+    setHandRaised: (name: string | null) => void;
 }
 
 export const useMeetingStore = create<MeetingState>((set) => ({
@@ -34,6 +36,9 @@ export const useMeetingStore = create<MeetingState>((set) => ({
     isRaisedHand: false,
     admins: [],
     messages: [],
+    handRaisedBy: null,
+
+    setHandRaised: (name) => set({ handRaisedBy: name }),
 
     setUserName: (name) => set({ userName: name }),
     setRoomName: (room) => set({ roomName: room }),
